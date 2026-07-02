@@ -58,7 +58,10 @@
     <!-- 关卡选择 -->
     <div id="levelselect-overlay" style="display:flex; position:fixed; top:0; left:0; width:100%; height:100%; background:radial-gradient(ellipse at center, #0f0f2a 0%, #050510 100%); z-index:20; flex-direction:column; justify-content:center; align-items:center;">
         <h1 style="font-family:'Arial Black',Arial,sans-serif; font-size:42px; font-weight:900; color:#fff; margin:0 0 8px 0; text-shadow:0 0 18px #8b5cf6, 0 0 40px #4a30a0; letter-spacing:4px;">选择关卡</h1>
-        <p style="font-family:Arial,sans-serif; font-size:14px; color:rgba(255,255,255,0.4); margin:0 0 36px 0;">SELECT STAGE</p>
+        <p style="font-family:Arial,sans-serif; font-size:14px; color:rgba(255,255,255,0.4); margin:0 0 8px 0;">SELECT STAGE</p>
+        <button id="reset-progress-btn" style="background:none; border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.25); padding:4px 14px; border-radius:20px; cursor:pointer; font-size:11px; margin-bottom:28px; transition:all 0.2s;"
+            onmouseover="this.style.borderColor='rgba(255,100,100,0.5)';this.style.color='rgba(255,150,150,0.8)';"
+            onmouseout="this.style.borderColor='rgba(255,255,255,0.12)';this.style.color='rgba(255,255,255,0.25)';">重置进度</button>
         <div id="lv-cards-row" style="display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:6px;">
             <div class="lv-card" data-level="0" style="border-color:#ff8cfd; box-shadow:0 0 18px #ff8cfd44, inset 0 0 18px #ff8cfd11; cursor:pointer;">
                 <div class="lv-num" style="color:#ff8cfd; text-shadow:0 0 16px #ff8cfd;">1</div>
@@ -149,6 +152,15 @@
         let currentLevel = 0;
         let maxUnlockedLevel = 0;   // 已解锁的最高关卡索引（初始仅第1关）
 
+        // 从 localStorage 读取进度（隐私模式下静默失败）
+        try {
+            const saved = localStorage.getItem('ball-game-progress');
+            if (saved !== null) {
+                const v = parseInt(saved, 10);
+                if (!isNaN(v) && v >= 0 && v < totalLevels) maxUnlockedLevel = v;
+            }
+        } catch (_) { /* localStorage 不可用 */ }
+
         // === 关卡选择卡片（绑定静态HTML元素） ===
         const cardGlowColors = ['#ff8cfd', '#5cd4ff', '#fff040', '#8b5cf6', '#ff8800'];
         const lvCards = [];
@@ -199,12 +211,22 @@
         function unlockNextLevel() {
             if (currentLevel + 1 < totalLevels && currentLevel + 1 > maxUnlockedLevel) {
                 maxUnlockedLevel = currentLevel + 1;
+                try { localStorage.setItem('ball-game-progress', String(maxUnlockedLevel)); } catch (_) {}
                 refreshCardLock(maxUnlockedLevel);
             }
         }
 
         // 初始化卡片锁定状态
         for (let i = 0; i < totalLevels; i++) refreshCardLock(i);
+
+        // 重置进度按钮
+        document.getElementById('reset-progress-btn').addEventListener('click', () => {
+            if (confirm('确定要重置所有关卡进度吗？此操作不可撤销。')) {
+                maxUnlockedLevel = 0;
+                try { localStorage.removeItem('ball-game-progress'); } catch (_) {}
+                for (let i = 0; i < totalLevels; i++) refreshCardLock(i);
+            }
+        });
 
         // 场景
         const scene = new THREE.Scene();
