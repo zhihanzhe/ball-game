@@ -9,9 +9,13 @@
             margin: 0;
             overflow: hidden;
             background: #000;
+            touch-action: manipulation;
+            -webkit-user-select: none;
+            user-select: none;
         }
         canvas {
             display: block;
+            touch-action: none;
         }
         .lv-card {
             width: 172px; height: 200px;
@@ -1516,15 +1520,28 @@
             spawnRippleParticles(x, y - 0.025, z, color);
         }
 
-        // === 鼠标控制球左右移动 ===
+        // === 鼠标/触摸控制球左右移动 ===
         const mouseSensitivity = 6.5;  // 球最大位移，>5.5触发掉落虚空
         let targetBallX = 0;
 
-        window.addEventListener('mousemove', (e) => {
+        function updatePointer(clientX) {
             if (gameOver) return;
-            const normalizedX = (e.clientX / window.innerWidth) * 2 - 1;
+            const normalizedX = (clientX / window.innerWidth) * 2 - 1;
             targetBallX = normalizedX * mouseSensitivity;
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            updatePointer(e.clientX);
         });
+
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 0) updatePointer(e.touches[0].clientX);
+        }, { passive: true });
+
+        window.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (e.touches.length > 0) updatePointer(e.touches[0].clientX);
+        }, { passive: false });
 
         // 动画循环
         function animate() {
