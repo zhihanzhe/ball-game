@@ -323,8 +323,18 @@
             audioInitStarted = true;
             try {
                 ensureAudioCtx();
-                const resp = await fetch('future_ST.m4a');
-                const buf = await resp.arrayBuffer();
+                // 使用 XHR 替代 fetch，兼容 file:// 协议（手机直接打开）
+                const buf = await new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('GET', 'future_ST.m4a', true);
+                    xhr.responseType = 'arraybuffer';
+                    xhr.onload = () => {
+                        if (xhr.status === 200 || xhr.status === 0) resolve(xhr.response);
+                        else reject(new Error('XHR failed: ' + xhr.status));
+                    };
+                    xhr.onerror = () => reject(new Error('XHR error'));
+                    xhr.send();
+                });
                 const audioBuffer = await audioCtx.decodeAudioData(buf);
                 beatTimes = detectBeats(audioBuffer);
                 if (beatTimes.length < 2) { console.warn('节拍检测不足，使用默认间距'); return; }

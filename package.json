@@ -5,7 +5,7 @@
   "description": "3D弹球游戏 - Three.js 黑洞跳跃",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && python inline-build.py",
     "preview": "vite preview"
   },
   "dependencies": {
