@@ -610,6 +610,12 @@
             bstMat.opacity = 0;
             for (let i = 0; i < bstPartMax; i++) { bstData[i].life = 0; }
             document.getElementById('boost-indicator').style.opacity = '0';
+            // 重置碎片/拖影粒子（避免旧粒子残留）
+            for (let i = 0; i < debrisMax; i++) { debrisData[i].life = 0; }
+            debrisNextIdx = 0;
+            for (let i = 0; i < trailMax; i++) { trailData[i].life = 0; }
+            trailNextIdx = 0;
+            trailSpawnTimer = 0;
             explosionPoints.visible = false;
             explosionVelocities.length = 0;
             for (let i = 0; i < explosionCount; i++) {
@@ -1189,6 +1195,12 @@
             bstMat.opacity = 0;
             for (let i = 0; i < bstPartMax; i++) { bstData[i].life = 0; }
             document.getElementById('boost-indicator').style.opacity = '0';
+            // 重置碎片/拖影粒子（避免旧粒子残留）
+            for (let i = 0; i < debrisMax; i++) { debrisData[i].life = 0; }
+            debrisNextIdx = 0;
+            for (let i = 0; i < trailMax; i++) { trailData[i].life = 0; }
+            trailNextIdx = 0;
+            trailSpawnTimer = 0;
             try {
                 sphere.material.color.copy(origBallColor);
                 currentBallColor.copy(origBallColor);
@@ -1242,6 +1254,7 @@
             fallTime = 0;
             safeColor = null;
             deathTime = 0;
+            segmentsGenerated = 0; // 避免跳过安全色块段，导致复活后无匹配颜色
             resumeInvincibleUntil = performance.now() + 2500; // 复活后2.5秒无敌
             sphere.visible = true;
             wireframeSphere.visible = true;
@@ -1446,7 +1459,6 @@
         const debrisMax = 600;
         const debrisPositions = new Float32Array(debrisMax * 3);
         const debrisColors   = new Float32Array(debrisMax * 3);
-        const debrisAlphas   = new Float32Array(debrisMax);
         const debrisData = [];
 
         for (let i = 0; i < debrisMax; i++) {
@@ -1454,7 +1466,6 @@
             debrisPositions[i * 3 + 1] = -999;
             debrisPositions[i * 3 + 2] = 0;
             debrisColors[i * 3] = 1; debrisColors[i * 3 + 1] = 1; debrisColors[i * 3 + 2] = 1;
-            debrisAlphas[i] = 0;
             debrisData.push({ vx: 0, vy: 0, vz: 0, life: 0, maxLife: 0, size: 0 });
         }
         const debrisGeo = new THREE.BufferGeometry();
@@ -1495,7 +1506,6 @@
                 debrisColors[idx * 3] = c.r;
                 debrisColors[idx * 3 + 1] = c.g;
                 debrisColors[idx * 3 + 2] = c.b;
-                debrisAlphas[idx] = 1;
             }
             debrisGeo.attributes.position.needsUpdate = true;
             debrisGeo.attributes.color.needsUpdate = true;
@@ -1919,7 +1929,7 @@
                 const totalMult = progFactor + Math.min(cfg.boostCap, boostAccum) / Math.max(0.01, cfg.velZ);
                 const boostEl = document.getElementById('boost-indicator');
                 const timerEl = document.getElementById('boost-timer');
-                const active = boostAccum > 0.01 || progFactor > 1.05;
+                const active = boostAccum > 0.01 || (progFactor > 1.05 && cfg.boostStep > 0);
                 if (active) {
                     boostEl.style.opacity = '1';
                     timerEl.textContent = '×' + totalMult.toFixed(1);
