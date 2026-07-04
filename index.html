@@ -246,6 +246,10 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050510);
 
+        // 移动端检测（必须在所有用到的常量之前声明）
+        const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ||
+                         (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
+
         // === 星空背景粒子 ===
         const starCount = isMobile ? 800 : 2000;
         const starGeo = new THREE.BufferGeometry();
@@ -278,9 +282,7 @@
         camera.position.set(0, 3, 10);
         camera.lookAt(0, 0, -10);
 
-        // 渲染器 — 移动端检测与降级
-        const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ||
-                         (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
+        // 渲染器 — 移动端降级
         const renderer = new THREE.WebGLRenderer({
             antialias: !isMobile,
             powerPreference: isMobile ? 'low-power' : 'high-performance'
