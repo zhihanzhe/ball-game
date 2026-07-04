@@ -1930,7 +1930,7 @@
                 const totalMult = progFactor + Math.min(cfg.boostCap, boostAccum) / Math.max(0.01, cfg.velZ);
                 const boostEl = document.getElementById('boost-indicator');
                 const timerEl = document.getElementById('boost-timer');
-                const active = boostAccum > 0.01 || (progFactor > 1.05 && cfg.boostStep > 0);
+                const active = boostAccum > 0.01;
                 if (active) {
                     boostEl.style.opacity = '1';
                     timerEl.textContent = '×' + totalMult.toFixed(1);
