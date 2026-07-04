@@ -247,7 +247,7 @@
         scene.background = new THREE.Color(0x050510);
 
         // === 星空背景粒子 ===
-        const starCount = 2000;
+        const starCount = isMobile ? 800 : 2000;
         const starGeo = new THREE.BufferGeometry();
         const starPositions = new Float32Array(starCount * 3);
         const starSizes = new Float32Array(starCount);
@@ -278,11 +278,16 @@
         camera.position.set(0, 3, 10);
         camera.lookAt(0, 0, -10);
 
-        // 渲染器
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        // 渲染器 — 移动端检测与降级
+        const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ||
+                         (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
+        const renderer = new THREE.WebGLRenderer({
+            antialias: !isMobile,
+            powerPreference: isMobile ? 'low-power' : 'high-performance'
+        });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.shadowMap.enabled = true;
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 2 : 2.5));
+        renderer.shadowMap.enabled = !isMobile;  // 移动端关闭阴影，大幅降低GPU负载
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.2;
         document.body.appendChild(renderer.domElement);
@@ -300,7 +305,7 @@
         controls.update();
 
         // 球体
-        const geometry = new THREE.SphereGeometry(1, 64, 64);
+        const geometry = new THREE.SphereGeometry(1, isMobile ? 32 : 64, isMobile ? 32 : 64);
         const material = new THREE.MeshStandardMaterial({
             color: 0x4a90d9,
             roughness: 0.15,
@@ -338,7 +343,7 @@
         scene.add(sphere);
 
         // 线框球（装饰）
-        const wireframeGeo = new THREE.SphereGeometry(1.02, 32, 16);
+        const wireframeGeo = new THREE.SphereGeometry(1.02, isMobile ? 16 : 32, isMobile ? 8 : 16);
         const wireframeMat = new THREE.MeshBasicMaterial({
             color: 0x00ffff,
             wireframe: true,
@@ -349,7 +354,7 @@
         scene.add(wireframeSphere);
 
         // 粒子光环
-        const particleCount = 2000;
+        const particleCount = isMobile ? 800 : 2000;
         const ringRadius = 1.8;
         const ringThickness = 0.25;
         const positions = new Float32Array(particleCount * 3);
@@ -960,7 +965,7 @@
             targetZ: 0,      // 黑洞世界Z（不断更新）
             particles: [],    // 环绕粒子数据
         };
-        const bhParticleCount = 180;
+        const bhParticleCount = isMobile ? 60 : 180;
         const bhPositions = new Float32Array(bhParticleCount * 3);
         const bhColors    = new Float32Array(bhParticleCount * 3);
 
@@ -1073,7 +1078,7 @@
         }
 
         // === 碎裂粒子系统 ===
-        const explosionCount = 300;
+        const explosionCount = isMobile ? 100 : 300;
         const explosionPositions = new Float32Array(explosionCount * 3);
         const explosionColors = new Float32Array(explosionCount * 3);
         const explosionVelocities = [];
@@ -1395,7 +1400,7 @@
                 gl_FragColor = vec4(vColor, alpha);
             }`;
 
-        const rippleParticleMax = 480;
+        const rippleParticleMax = isMobile ? 160 : 480;
         const rpPositions = new Float32Array(rippleParticleMax * 3);
         const rpColors    = new Float32Array(rippleParticleMax * 3);
         const rpAlphas    = new Float32Array(rippleParticleMax);
@@ -1428,7 +1433,7 @@
         let rpNextIdx = 0;
 
         // === 加速粒子翻涌系统 ===
-        const bstPartMax = 1000;
+        const bstPartMax = isMobile ? 400 : 1000;
         const bstPositions = new Float32Array(bstPartMax * 3);
         const bstColors    = new Float32Array(bstPartMax * 3);
         const bstData = []; // { vx, vy, vz, life, maxLife, hue }
@@ -1456,7 +1461,7 @@
         scene.add(bstPoints);
 
         // === 碰撞碎片粒子系统 ===
-        const debrisMax = 600;
+        const debrisMax = isMobile ? 200 : 600;
         const debrisPositions = new Float32Array(debrisMax * 3);
         const debrisColors   = new Float32Array(debrisMax * 3);
         const debrisData = [];
@@ -1485,7 +1490,7 @@
         let debrisNextIdx = 0;
 
         function spawnDebris(x, y, z, plankColor) {
-            const count = 25;
+            const count = isMobile ? 10 : 25;
             const color = new THREE.Color(plankColor);
             for (let i = 0; i < count; i++) {
                 const idx = debrisNextIdx;
@@ -1512,7 +1517,7 @@
         }
 
         // === 加速拖影粒子系统 ===
-        const trailMax = 200;
+        const trailMax = isMobile ? 80 : 200;
         const trailPositions = new Float32Array(trailMax * 3);
         const trailColors   = new Float32Array(trailMax * 3);
         const trailData = [];
@@ -1708,16 +1713,16 @@
                 pointLight.position.z = Math.cos(time) * 3;
                 pointLight.position.y = 1 + bounce;
 
-                // 统一碰撞检测：球落地接触任意木板 → 下陷 + 涟漪
+                // 统一碰撞检测（合并3次plankPool遍历为1次，降低移动端CPU开销）
                 const contactThreshold = -bounceAmp * 0.65;
+                const invincible = plankGroup.position.z >= invincibleUntilZ && performance.now() >= resumeInvincibleUntil;
                 for (const p of plankPool) {
                     const worldZ = p.position.z + plankGroup.position.z;
                     const xDist = Math.abs(sphere.position.x - p.position.x);
                     const halfW = p.userData.halfWidth;
-                    if (Math.abs(worldZ) < segLen / 2 + 0.05 &&
-                        xDist < halfW + 0.1 &&
-                        bounce < contactThreshold &&
-                        !p.userData._hitFrame) {
+                    const nearZ = Math.abs(worldZ) < segLen / 2 + 0.05;
+                    const inContact = nearZ && xDist < halfW + 0.1 && bounce < contactThreshold;
+                    if (inContact && !p.userData._hitFrame) {
                         // 下陷缓冲
                         p.userData.sinkOffset = -0.06;
                         p.userData.sinkVelocity = 1.2;
@@ -1735,39 +1740,22 @@
                             const cfg = levels[currentLevel];
                             boostAccum = Math.min(cfg.boostCap, boostAccum + cfg.boostStep);
                         }
-                    }
-                    // 离开接触范围时重置标记
-                    if (bounce > -bounceAmp * 0.3) {
-                        p.userData._hitFrame = false;
-                    }
-                }
-
-                // 检测类型1 → 球变色
-                for (const p of plankPool) {
-                    if (p.userData.type === 1 &&
-                        Math.abs(p.position.z + plankGroup.position.z) < 0.1 &&
-                        Math.abs(sphere.position.x - p.position.x) < fullWidth / 2) {
-                        sphere.material.color.copy(p.userData.plankColor);
-                        currentBallColor.copy(p.userData.plankColor);
-                        break;
-                    }
-                }
-
-                // 检测类型2/3 → 球落到方块上且颜色不同则碎裂（无敌时间内跳过）
-                if (plankGroup.position.z >= invincibleUntilZ && performance.now() >= resumeInvincibleUntil) {
-                    for (const p of plankPool) {
-                        const worldZ = p.position.z + plankGroup.position.z;
-                        const xDist = Math.abs(sphere.position.x - p.position.x);
-                        const halfW = p.userData.halfWidth;
-                        if ((p.userData.type === 2 || p.userData.type === 3) &&
-                            Math.abs(worldZ) < segLen / 2 + 0.05 &&
-                            xDist < halfW + 0.1 &&
-                            bounce < contactThreshold) {
+                        // 类型2/3 死亡检测（无敌时间内跳过）
+                        if (invincible && (p.userData.type === 2 || p.userData.type === 3)) {
                             if (!currentBallColor.equals(p.userData.plankColor)) {
                                 triggerDeath();
                                 break;
                             }
                         }
+                    }
+                    // 离开接触范围时重置标记
+                    if (bounce > -bounceAmp * 0.3) {
+                        p.userData._hitFrame = false;
+                    }
+                    // 类型1 → 球变色
+                    if (p.userData.type === 1 && Math.abs(worldZ) < 0.1 && Math.abs(sphere.position.x - p.position.x) < fullWidth / 2) {
+                        sphere.material.color.copy(p.userData.plankColor);
+                        currentBallColor.copy(p.userData.plankColor);
                     }
                 }
 
