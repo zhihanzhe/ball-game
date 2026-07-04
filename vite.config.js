@@ -9,6 +9,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    target: 'es2015',  // 兼容微信X5等旧WebView
     assetsInlineLimit: 0,
     rollupOptions: {
       output: {

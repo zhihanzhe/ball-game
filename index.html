@@ -2,7 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>3D 球体 - Three.js</title>
     <style>
         body {
@@ -282,11 +285,19 @@
         camera.position.set(0, 3, 10);
         camera.lookAt(0, 0, -10);
 
-        // 渲染器 — 移动端降级
-        const renderer = new THREE.WebGLRenderer({
-            antialias: !isMobile,
-            powerPreference: isMobile ? 'low-power' : 'high-performance'
-        });
+        // 渲染器 — 移动端降级（兼容微信X5浏览器）
+        let renderer;
+        try {
+            renderer = new THREE.WebGLRenderer({
+                antialias: !isMobile,
+                powerPreference: isMobile ? 'low-power' : 'high-performance',
+                failIfMajorPerformanceCaveat: false  // 微信内置浏览器可能使用软件渲染
+            });
+        } catch (e) {
+            // WebGL 不可用时的降级提示
+            document.body.innerHTML = '<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#fff;font-family:Arial,sans-serif;font-size:18px;"><p>😞 您的浏览器不支持WebGL</p><p style="font-size:14px;color:#aaa;">请使用系统浏览器打开此页面</p></div>';
+            throw e;
+        }
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 2 : 2.5));
         renderer.shadowMap.enabled = !isMobile;  // 移动端关闭阴影，大幅降低GPU负载
