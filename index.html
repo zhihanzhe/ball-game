@@ -145,6 +145,8 @@
         </div>
         <div style="margin-top:40px; font-family:Arial,sans-serif; font-size:16px; color:rgba(255,255,255,0.35); pointer-events:none;">👆 点击屏幕开始</div>
     </div>
+    <!-- 背景音乐 -->
+    <audio id="bg-music" src="7月4日.mp3" loop preload="auto" style="display:none;"></audio>
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -559,11 +561,20 @@
             tip.__onDismiss = () => {
                 gameStarted = true;
                 initAudio();
+                // 开始播放背景音乐
+                const bgm = document.getElementById('bg-music');
+                bgm.volume = 0.3;
+                bgm.currentTime = 0;
+                bgm.play().catch(() => {});
                 restartGame();
             };
         }
 
         function showLevelSelect() {
+            // 停止背景音乐
+            const bgm = document.getElementById('bg-music');
+            bgm.pause();
+            bgm.currentTime = 0;
             // 先关弹窗
             document.getElementById('levelselect-overlay').style.display = 'flex';
             document.getElementById('gameover-overlay').style.display = 'none';
