@@ -410,7 +410,7 @@
         let currentSegTotal = defaultSegTotal;
         const fullWidth = 4.0;    // 类型1 X轴全宽
         const plankThick = 0.06;
-        let velZ = 1.2;            // 轨道滚动速度（关卡可变）
+        // velZ 已由 getEffectiveVelZ() 统一管理，不再需要全局变量
 
         // === 音频节拍分析系统 ===
         let beatTimes = [];           // 节拍时间点（秒）
@@ -555,7 +555,6 @@
 
         function startLevel(n) {
             currentLevel = n;
-            velZ = levels[n].velZ;
             updateLevelDisplay();
             document.getElementById('levelselect-overlay').style.display = 'none';
             // 显示开局提示，点击后正式开始
@@ -565,19 +564,21 @@
                 gameStarted = true;
                 initAudio();
                 // 开始播放背景音乐
-                const bgm = document.getElementById('bg-music');
-                bgm.volume = 0.3;
-                bgm.currentTime = 0;
-                bgm.play().catch(() => {});
+                if (bgmEl) {
+                    bgmEl.volume = 0.3;
+                    bgmEl.currentTime = 0;
+                    bgmEl.play().catch(() => {});
+                }
                 restartGame();
             };
         }
 
         function showLevelSelect() {
             // 停止背景音乐
-            const bgm = document.getElementById('bg-music');
-            bgm.pause();
-            bgm.currentTime = 0;
+            if (bgmEl) {
+                bgmEl.pause();
+                bgmEl.currentTime = 0;
+            }
             // 先关弹窗
             document.getElementById('levelselect-overlay').style.display = 'flex';
             document.getElementById('gameover-overlay').style.display = 'none';
@@ -882,6 +883,7 @@
         // === 加速轨道状态 ===
         let boostAccum = 0;                    // 累积加速量（叠加衰减）
         const boostDecayRate = 0.06;           // 每秒衰减 0.06
+        let lastFrameTime = performance.now(); // 用于帧率无关的衰减计算
 
         // 返回当前实时的有效速度
         function getEffectiveVelZ() {
@@ -910,6 +912,8 @@
         // === 关卡名显示 ===
         const levelNameEl = document.getElementById('level-name');
         const levelSubEl  = document.getElementById('level-sub');
+        // === 背景音乐（缓存引用，避免重复DOM查询） ===
+        const bgmEl = document.getElementById('bg-music');
         function updateLevelDisplay() {
             const cfg = levels[currentLevel];
             levelNameEl.textContent = '第' + (currentLevel + 1) + '关 · ' + cfg.name;
@@ -1130,7 +1134,6 @@
         function nextLevel() {
             unlockNextLevel();
             currentLevel++;
-            velZ = levels[currentLevel].velZ;
             restartGame();
         }
 
@@ -1179,7 +1182,6 @@
             beatGenIdx = 0;
             audioBeatIdx = 0;
             currentSegTotal = defaultSegTotal;
-            velZ = levels[currentLevel].velZ;
             updateLevelDisplay();
             levelComplete = false;
             boostAccum = 0;
@@ -1253,8 +1255,7 @@
             explosionVelocities.length = 0;
             document.getElementById('gameover-overlay').style.display = 'none';
             // 恢复背景音乐
-            const bgm = document.getElementById('bg-music');
-            bgm.play().catch(() => {});
+            if (bgmEl) { bgmEl.play().catch(() => {}); }
         }
 
         let adTimer = null;
@@ -1269,8 +1270,7 @@
             adVideo.muted = false;
             adVideo.volume = 1.0;
             // 暂停背景音乐
-            const bgm = document.getElementById('bg-music');
-            bgm.pause();
+            if (bgmEl) { bgmEl.pause(); }
             const playPromise = adVideo.play();
             if (playPromise) playPromise.catch(() => {});
             if (adTimer) clearInterval(adTimer);
@@ -1628,9 +1628,14 @@
 
             const time = Date.now() * 0.001;
             const effectiveVelZ = getEffectiveVelZ();
-            // 加速衰减（每秒衰减 boostDecayRate）
-            if (boostAccum > 0) {
-                boostAccum = Math.max(0, boostAccum - boostDecayRate * 0.016);
+            // 加速衰减（使用实际帧间隔，避免帧率依赖）
+            {
+                const now = performance.now();
+                const dt = Math.min(0.1, (now - lastFrameTime) / 1000);
+                lastFrameTime = now;
+                if (boostAccum > 0) {
+                    boostAccum = Math.max(0, boostAccum - boostDecayRate * dt);
+                }
             }
 
             // === 正常游戏状态 ===
@@ -1911,7 +1916,7 @@
                 const cfg = levels[currentLevel];
                 const dist = Math.max(0, plankGroup.position.z);
                 const progFactor = Math.min(cfg.progCap, 1 + dist * cfg.progRate);
-                const totalMult = progFactor + boostAccum / Math.max(0.01, cfg.velZ);
+                const totalMult = progFactor + Math.min(cfg.boostCap, boostAccum) / Math.max(0.01, cfg.velZ);
                 const boostEl = document.getElementById('boost-indicator');
                 const timerEl = document.getElementById('boost-timer');
                 const active = boostAccum > 0.01 || progFactor > 1.05;
