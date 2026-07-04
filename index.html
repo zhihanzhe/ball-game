@@ -151,12 +151,16 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         // === 关卡系统 ===
+        // progRate: 每行进1单位距离的基础速度增幅比
+        // progCap:  渐进加速最大倍率
+        // boostStep: 每次踩类型4叠加的速度量
+        // boostCap:  叠加加速上限
         const levels = [
-            { name: '启程',     types: [1],         comboToWin: 1,    velZ: 2.0 },
-            { name: '虫洞',     types: [1, 3, 4],   comboToWin: 10,   velZ: 1.2 },
-            { name: '视界',     types: [1, 2, 3, 4], comboToWin: 20,  velZ: 1.3 },
-            { name: '卡冈图雅', types: [1, 2, 3, 4], comboToWin: 200, velZ: 1.5 },
-            { name: '奇点',     types: [1, 2, 3, 4], comboToWin: 2000, velZ: 1.8 },
+            { name: '启程',     types: [1],         comboToWin: 1,    velZ: 2.0, progRate: 0.01, progCap: 1.3,  boostStep: 0,   boostCap: 0   },
+            { name: '虫洞',     types: [1, 3, 4],   comboToWin: 10,   velZ: 1.2, progRate: 0.02, progCap: 2.0,  boostStep: 0.6, boostCap: 1.8 },
+            { name: '视界',     types: [1, 2, 3, 4], comboToWin: 20,  velZ: 1.3, progRate: 0.025,progCap: 2.2, boostStep: 0.7, boostCap: 2.1 },
+            { name: '卡冈图雅', types: [1, 2, 3, 4], comboToWin: 200, velZ: 1.5, progRate: 0.03, progCap: 2.5,  boostStep: 0.8, boostCap: 2.4 },
+            { name: '奇点',     types: [1, 2, 3, 4], comboToWin: 2000, velZ: 1.8, progRate: 0.035,progCap: 2.8, boostStep: 1.0, boostCap: 3.0 },
         ];
         const totalLevels = levels.length;
         let currentLevel = 0;
@@ -506,8 +510,7 @@
             if (!ensureAudioCtx()) return;
             const now = audioCtx.currentTime;
             // 计算当前弹跳周期（一个碰撞到下一个碰撞的时间）
-            const boosting = performance.now() < speedBoostEndTime;
-            const evz = boosting ? velZ * boostVelZFactor : velZ;
+            const evz = getEffectiveVelZ();
             const cycleTime = currentSegTotal / evz;
             const maxSlice = Math.max(0.25, cycleTime * 0.85); // 略小于弹跳周期
             // 底鼓：低频正弦波快速衰减
@@ -601,7 +604,7 @@
             targetDistance = null;
             tarDistEl.textContent = '目标 ??? m';
             curDistEl.textContent = '0.0 m';
-            speedBoostEndTime = 0;
+            boostAccum = 0;
             resumeInvincibleUntil = 0;
             bstMat.opacity = 0;
             for (let i = 0; i < bstPartMax; i++) { bstData[i].life = 0; }
@@ -801,8 +804,7 @@
         function ensureSegments() {
             while (nextSegZ + plankGroup.position.z > farWorldLimit) {
                 // 节拍同步间距
-                const boosting = performance.now() < speedBoostEndTime;
-                const evz = boosting ? velZ * boostVelZFactor : velZ;
+                const evz = getEffectiveVelZ();
                 if (audioReady && beatTimes.length >= 2) {
                     const i0 = beatGenIdx % beatTimes.length;
                     const i1 = (beatGenIdx + 1) % beatTimes.length;
@@ -878,9 +880,17 @@
         const trackEdge = fullWidth / 2 + 0.3;  // 轨道边缘 X=2.3
 
         // === 加速轨道状态 ===
-        let speedBoostEndTime = 0;          // performance.now() 时间戳
-        const boostVelZFactor = Math.sqrt(3); // 重力3倍 → 周期/√3 → 速度×√3
-        const boostDuration = 10000;         // 持续10秒
+        let boostAccum = 0;                    // 累积加速量（叠加衰减）
+        const boostDecayRate = 0.06;           // 每秒衰减 0.06
+
+        // 返回当前实时的有效速度
+        function getEffectiveVelZ() {
+            const cfg = levels[currentLevel];
+            const dist = Math.max(0, plankGroup.position.z);
+            const progFactor = Math.min(cfg.progCap, 1 + dist * cfg.progRate);
+            const accu = Math.min(cfg.boostCap, boostAccum);
+            return cfg.velZ * progFactor + accu;
+        }
 
         // === 复活无敌状态 ===
         let resumeInvincibleUntil = 0;       // performance.now() 时间戳，复活后2.5秒内无敌
@@ -1078,7 +1088,7 @@
             gameOver = true;
             deathTime = 0;
             hideCombo();
-            speedBoostEndTime = 0;
+            boostAccum = 0;
             resumeInvincibleUntil = 0;
             bstMat.opacity = 0;
             for (let i = 0; i < bstPartMax; i++) { bstData[i].life = 0; }
@@ -1172,7 +1182,7 @@
             velZ = levels[currentLevel].velZ;
             updateLevelDisplay();
             levelComplete = false;
-            speedBoostEndTime = 0;
+            boostAccum = 0;
             resumeInvincibleUntil = 0;
             bstMat.opacity = 0;
             for (let i = 0; i < bstPartMax; i++) { bstData[i].life = 0; }
@@ -1611,8 +1621,11 @@
             requestAnimationFrame(animate);
 
             const time = Date.now() * 0.001;
-            const boosting = performance.now() < speedBoostEndTime;
-            const effectiveVelZ = boosting ? velZ * boostVelZFactor : velZ;
+            const effectiveVelZ = getEffectiveVelZ();
+            // 加速衰减（每秒衰减 boostDecayRate）
+            if (boostAccum > 0) {
+                boostAccum = Math.max(0, boostAccum - boostDecayRate * 0.016);
+            }
 
             // === 正常游戏状态 ===
             if (gameStarted && !gameOver && !falling && !gameWon) {
@@ -1655,7 +1668,7 @@
                 }
 
                 // 加速拖影
-                if (performance.now() < speedBoostEndTime) {
+                if (boostAccum > 0.01) {
                     trailSpawnTimer += 0.016;
                     while (trailSpawnTimer > 0.03) {
                         trailSpawnTimer -= 0.03;
@@ -1696,9 +1709,10 @@
                         triggerCombo();
                         // 节拍音效
                         playBeatAudio();
-                        // 类型4：加速轨道
+                        // 类型4：加速轨道（叠加累积）
                         if (p.userData.type === 4) {
-                            speedBoostEndTime = performance.now() + boostDuration;
+                            const cfg = levels[currentLevel];
+                            boostAccum = Math.min(cfg.boostCap, boostAccum + cfg.boostStep);
                         }
                     }
                     // 离开接触范围时重置标记
@@ -1888,13 +1902,16 @@
             }
             // 加速指示器 + 粒子翻涌
             {
-                const remaining = speedBoostEndTime - performance.now();
+                const cfg = levels[currentLevel];
+                const dist = Math.max(0, plankGroup.position.z);
+                const progFactor = Math.min(cfg.progCap, 1 + dist * cfg.progRate);
+                const totalMult = progFactor + boostAccum / Math.max(0.01, cfg.velZ);
                 const boostEl = document.getElementById('boost-indicator');
                 const timerEl = document.getElementById('boost-timer');
-                const active = remaining > 0;
+                const active = boostAccum > 0.01 || progFactor > 1.05;
                 if (active) {
                     boostEl.style.opacity = '1';
-                    timerEl.textContent = (remaining / 1000).toFixed(1) + 's';
+                    timerEl.textContent = '×' + totalMult.toFixed(1);
                 } else {
                     boostEl.style.opacity = '0';
                 }
