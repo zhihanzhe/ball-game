@@ -1252,6 +1252,9 @@
             explosionPoints.visible = false;
             explosionVelocities.length = 0;
             document.getElementById('gameover-overlay').style.display = 'none';
+            // 恢复背景音乐
+            const bgm = document.getElementById('bg-music');
+            bgm.play().catch(() => {});
         }
 
         let adTimer = null;
@@ -1265,6 +1268,9 @@
             adVideo.currentTime = 0;
             adVideo.muted = false;
             adVideo.volume = 1.0;
+            // 暂停背景音乐
+            const bgm = document.getElementById('bg-music');
+            bgm.pause();
             const playPromise = adVideo.play();
             if (playPromise) playPromise.catch(() => {});
             if (adTimer) clearInterval(adTimer);
