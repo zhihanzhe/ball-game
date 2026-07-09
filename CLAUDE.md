@@ -74,6 +74,8 @@ Rules:
 - To add a new change on top of a pushed/tagged commit, make a **new commit** (`git commit`), never `git commit --amend`.
 - Only amend commits that exist **solely locally** and have never been pushed.
 - After any classifier "unavailable" error on a mutating git command, do **not** blindly retry — first verify with read-only commands (`git status -sb`, `git log --oneline -3`, `git reflog -5`) whether it already ran. Retries can execute twice.
+- Commit each functional change immediately — don't accumulate multiple uncommitted edits.
+- After committing, attempt to push. If the network fails (common when reaching GitHub from mainland China — `port 443` timeout / connection reset), tell the user and preserve the local state; never abandon the commit or `--force` your way around it.
 
 Recovery if a pushed commit was accidentally amended (local shows `ahead 1, behind 1`):
 
