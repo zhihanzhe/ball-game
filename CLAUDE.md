@@ -37,6 +37,7 @@ To test the production build locally: `cd dist && npx serve . -p 8080` (or doubl
 ### Particle/VFX Systems
 
 Each is a `THREE.Points` buffer geometry with manual lifecycle management:
+
 - **Explosion particles** (`explosionCount`): Ball death effect
 - **Debris particles** (`debrisMax`): Sparks on plank contact
 - **Trail particles** (`trailMax`): Speed trail during boost
@@ -50,6 +51,7 @@ All particle counts are halved (roughly 1/3 to 1/2) on mobile.
 ### Build Output
 
 `dist/` contains:
+
 - `index.html` — Self-contained game (all JS inlined, ~520KB)
 - `bgm.mp3` — Background music
 - `future_ST.m4a` — Beat analysis audio source
