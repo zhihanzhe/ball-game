@@ -64,3 +64,23 @@ All particle counts are halved (roughly 1/3 to 1/2) on mobile.
 - WeChat browser compatibility requires ES2015 target, no WebGL 2-exclusive features, and `failIfMajorPerformanceCaveat: false`.
 - `isMobile` must be declared before any code that uses it (notably before `starCount`).
 - The game does not use TypeScript in practice despite `tsconfig.json` existing — all code is plain JS in `<script type="module">`.
+
+## Git Workflow
+
+**Never `git commit --amend` a commit that has already been pushed or tagged.** `9a42549` is `main`'s baseline on `origin` and is what the `v1.0.0` tag points to. Amending it rewrites that commit into a sibling (same parent, new hash), which makes local `main` diverge from `origin/main` (`ahead 1, behind 1`) and would orphan the tag if force-pushed. This divergence has happened twice on this repo — both times from an accidental amend folding a new edit into the pushed CHANGELOG commit.
+
+Rules:
+
+- To add a new change on top of a pushed/tagged commit, make a **new commit** (`git commit`), never `git commit --amend`.
+- Only amend commits that exist **solely locally** and have never been pushed.
+- After any classifier "unavailable" error on a mutating git command, do **not** blindly retry — first verify with read-only commands (`git status -sb`, `git log --oneline -3`, `git reflog -5`) whether it already ran. Retries can execute twice.
+
+Recovery if a pushed commit was accidentally amended (local shows `ahead 1, behind 1`):
+
+```bash
+git reset --mixed origin/main   # rewind to the pushed baseline; keeps your edit in the working tree
+git add <files> && git commit -m "..."   # re-commit the edit as its own commit
+git push origin main            # fast-forward, no --force, tag untouched
+```
+
+`reset --mixed` is non-destructive (files stay in the working tree). Never `--force` push to fix this — it would rewrite the tagged, deployed history on `origin`.
