@@ -150,6 +150,308 @@
     </div>
     <!-- 背景音乐 -->
     <audio id="bg-music" src="bgm.mp3" loop preload="auto" style="display:none;"></audio>
+    <!-- ========== 遥测模块 ========== -->
+    <script>
+(function() {
+    'use strict';
+
+    // ====== 配置：设置你的分析端点 URL（空字符串 = 禁用遥测） ======
+    // 仅在本地开发（localhost/127.0.0.1/file://）启用，避免线上 HTTPS 页面因混合内容拦截而每次上报失败。
+    var TELEMETRY_LOCAL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'file:');
+    var ENDPOINT = TELEMETRY_LOCAL ? 'http://localhost:8080/telemetry' : '';
+
+    // ====== 禁用模式：所有方法变为空函数 ======
+    if (!ENDPOINT) {
+        var noop = function() {};
+        window.__telemetry = {
+            track: noop,
+            recordFrame: noop,
+            setLevel: noop,
+            setSessionEndReason: noop,
+            registerWebGLHandlers: noop,
+            flush: noop,
+            get sessionId() { return ''; }
+        };
+        return;
+    }
+
+    // ====== 常量 ======
+    var MAX_EVENTS = 100;
+    var FLUSH_INTERVAL = 30000;
+
+    // ====== UUID 生成 ======
+    function generateUUID() {
+        try { return crypto.randomUUID(); } catch (_) {}
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0;
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    }
+
+    // ====== 设备信息（初始化时采集一次） ======
+    var DEVICE_INFO = {
+        session_id: generateUUID(),
+        ua_short: navigator.userAgent.slice(0, 120),
+        screen_w: window.screen.width,
+        screen_h: window.screen.height,
+        viewport_w: window.innerWidth,
+        viewport_h: window.innerHeight,
+        is_mobile: /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent),
+        language: navigator.language,
+        timestamp_start: Date.now()
+    };
+
+    // 尝试获取 GPU 信息（WebGL 渲染器可能还未创建，由 registerWebGLHandlers 补充）
+    try {
+        var testCanvas = document.createElement('canvas');
+        var testGL = testCanvas.getContext('webgl') || testCanvas.getContext('experimental-webgl');
+        if (testGL) {
+            var dbgInfo = testGL.getExtension('WEBGL_debug_renderer_info');
+            if (dbgInfo) {
+                DEVICE_INFO.gpu_renderer = testGL.getParameter(dbgInfo.UNMASKED_RENDERER_WEBGL);
+            }
+        }
+    } catch (_) {}
+
+    // ====== 状态 ======
+    var events = [];
+    var frameTimes = [];
+    var lastFrameReportTime = 0;
+    var currentLevel = 0;
+    var currentDistance = 0;
+    var sessionEndReason = 'unknown';
+    var flushIntervalId = null;
+    var unloadRegistered = false;
+
+    // ====== 事件入队 ======
+    function enqueue(event) {
+        events.push(event);
+        if (events.length > MAX_EVENTS) events.shift();
+    }
+
+    // ====== 发送（beacon 优先，fetch keepalive 回退） ======
+    function send(payload) {
+        var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        var beaconOk = false;
+        try { beaconOk = navigator.sendBeacon(ENDPOINT, blob); } catch (_) {}
+        if (!beaconOk) {
+            try {
+                fetch(ENDPOINT, {
+                    method: 'POST',
+                    body: blob,
+                    keepalive: true,
+                    headers: { 'Content-Type': 'application/json' }
+                }).catch(function() {});
+            } catch (_) {}
+        }
+    }
+
+    // ====== 刷新缓冲区 ======
+    function flush() {
+        if (events.length === 0) return;
+        try {
+            var payload = {
+                device: DEVICE_INFO,
+                session_end_reason: sessionEndReason,
+                events: events.slice()
+            };
+            send(payload);
+            events = [];
+        } catch (_) {}
+    }
+
+    // ====== 公开 API ======
+
+    // 追踪游戏事件
+    function track(eventName, data) {
+        if (!ENDPOINT) return;
+        try {
+            var evt = {
+                session_id: DEVICE_INFO.session_id,
+                timestamp: Date.now(),
+                level: currentLevel,
+                distance: currentDistance,
+                event: eventName
+            };
+            if (data) {
+                for (var k in data) {
+                    if (data.hasOwnProperty(k)) evt[k] = data[k];
+                }
+            }
+            enqueue(evt);
+        } catch (_) {}
+    }
+
+    // 每帧性能记录（dtMs: 帧间隔毫秒，distance: 当前行进距离）
+    function recordFrame(dtMs, distance) {
+        if (!ENDPOINT) return;
+        try {
+            currentDistance = distance;
+            frameTimes.push(dtMs);
+
+            var now = Date.now();
+            if (now - lastFrameReportTime >= 5000) {
+                lastFrameReportTime = now;
+                if (frameTimes.length > 0) {
+                    var sorted = frameTimes.slice().sort(function(a, b) { return a - b; });
+                    var len = sorted.length;
+                    var sum = 0;
+                    for (var i = 0; i < len; i++) sum += sorted[i];
+                    var avg = sum / len;
+                    var jank = 0;
+                    for (var j = 0; j < len; j++) { if (sorted[j] > 50) jank++; }
+                    enqueue({
+                        session_id: DEVICE_INFO.session_id,
+                        timestamp: now,
+                        level: currentLevel,
+                        distance: currentDistance,
+                        event: 'frame_stats',
+                        fps: Math.round(1000 / avg),
+                        avg_dt_ms: Math.round(avg * 100) / 100,
+                        p50_dt_ms: Math.round(sorted[Math.floor(len * 0.5)] * 100) / 100,
+                        p95_dt_ms: Math.round(sorted[Math.floor(len * 0.95)] * 100) / 100,
+                        p99_dt_ms: Math.round(sorted[Math.floor(len * 0.99)] * 100) / 100,
+                        max_dt_ms: Math.round(sorted[len - 1] * 100) / 100,
+                        jank_frames: jank,
+                        sample_count: len
+                    });
+                    frameTimes = [];
+                }
+            }
+        } catch (_) {}
+    }
+
+    // 更新当前关卡号
+    function setLevel(n) {
+        currentLevel = n;
+    }
+
+    // 标记会话结束原因
+    function setSessionEndReason(reason) {
+        sessionEndReason = reason;
+    }
+
+    // 注册 WebGL 上下文事件监听
+    function registerWebGLHandlers(renderer) {
+        if (!ENDPOINT || !renderer || !renderer.domElement) return;
+        try {
+            renderer.domElement.addEventListener('webglcontextlost', function(evt) {
+                evt.preventDefault(); // 允许浏览器尝试恢复
+                try {
+                    enqueue({
+                        session_id: DEVICE_INFO.session_id,
+                        timestamp: Date.now(),
+                        level: currentLevel,
+                        distance: currentDistance,
+                        event: 'webgl_context_lost'
+                    });
+                    flush();
+                } catch (_) {}
+            });
+            renderer.domElement.addEventListener('webglcontextrestored', function() {
+                try {
+                    enqueue({
+                        session_id: DEVICE_INFO.session_id,
+                        timestamp: Date.now(),
+                        level: currentLevel,
+                        distance: currentDistance,
+                        event: 'webgl_context_restored'
+                    });
+                } catch (_) {}
+            });
+            // 补充 GPU 信息（如果之前未获取到）
+            try {
+                if (!DEVICE_INFO.gpu_renderer && renderer.capabilities) {
+                    // Three.js 没有直接暴露 UNMASKED_RENDERER，用 renderer.info
+                    DEVICE_INFO.gpu_renderer = renderer.info.render ? 'WebGL' : 'WebGL (unknown)';
+                }
+            } catch (_) {}
+        } catch (_) {}
+    }
+
+    // 获取会话 ID
+    function getSessionId() {
+        return DEVICE_INFO.session_id;
+    }
+
+    // ====== 注册卸载处理器 ======
+    function registerUnloadHandlers() {
+        if (unloadRegistered) return;
+        unloadRegistered = true;
+        try {
+            var onUnload = function() { flush(); };
+            window.addEventListener('beforeunload', onUnload);
+            window.addEventListener('pagehide', onUnload);
+            window.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'hidden') flush();
+            });
+        } catch (_) {}
+    }
+
+    // ====== 注册全局错误处理器 ======
+    function registerErrorHandlers() {
+        try {
+            window.addEventListener('error', function(evt) {
+                try {
+                    enqueue({
+                        session_id: DEVICE_INFO.session_id,
+                        timestamp: Date.now(),
+                        level: currentLevel,
+                        distance: currentDistance,
+                        event: 'global_error',
+                        type: 'uncaught_error',
+                        message: evt.message,
+                        filename: evt.filename ? evt.filename.slice(-80) : '',
+                        lineno: evt.lineno,
+                        colno: evt.colno,
+                        stack: evt.error && evt.error.stack ? evt.error.stack.slice(0, 500) : ''
+                    });
+                    flush();
+                } catch (_) {}
+            });
+
+            window.addEventListener('unhandledrejection', function(evt) {
+                try {
+                    enqueue({
+                        session_id: DEVICE_INFO.session_id,
+                        timestamp: Date.now(),
+                        level: currentLevel,
+                        distance: currentDistance,
+                        event: 'global_error',
+                        type: 'unhandled_rejection',
+                        message: evt.reason ? String(evt.reason).slice(0, 300) : 'unknown rejection'
+                    });
+                    flush();
+                } catch (_) {}
+            });
+        } catch (_) {}
+    }
+
+    // ====== 定期刷新 ======
+    function startPeriodicFlush() {
+        try {
+            flushIntervalId = setInterval(flush, FLUSH_INTERVAL);
+        } catch (_) {}
+    }
+
+    // ====== 暴露公共 API ======
+    window.__telemetry = {
+        track: track,
+        recordFrame: recordFrame,
+        setLevel: setLevel,
+        setSessionEndReason: setSessionEndReason,
+        registerWebGLHandlers: registerWebGLHandlers,
+        flush: flush,
+        get sessionId() { return getSessionId(); }
+    };
+
+    // ====== 自动初始化 ======
+    registerErrorHandlers();
+    registerUnloadHandlers();
+    startPeriodicFlush();
+})();
+    </script>
+    <!-- ========== 遥测模块结束 ========== -->
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -296,6 +598,7 @@
         } catch (e) {
             // WebGL 不可用时的降级提示
             document.body.innerHTML = '<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#fff;font-family:Arial,sans-serif;font-size:18px;"><p>😞 您的浏览器不支持WebGL</p><p style="font-size:14px;color:#aaa;">请使用系统浏览器打开此页面</p></div>';
+            try { window.__telemetry.track('webgl_init_failed', { error: e.message }); window.__telemetry.flush(); } catch (_) {}
             throw e;
         }
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -304,6 +607,9 @@
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.2;
         document.body.appendChild(renderer.domElement);
+
+        // WebGL 上下文丢失/恢复监听
+        try { window.__telemetry.registerWebGLHandlers(renderer); } catch (_) {}
 
         // 场景雾（增强深度感）
         scene.fog = new THREE.Fog(0x1a1a2e, 10, 80);
@@ -493,7 +799,7 @@
                 });
                 const audioBuffer = await audioCtx.decodeAudioData(buf);
                 beatTimes = detectBeats(audioBuffer);
-                if (beatTimes.length < 2) { console.warn('节拍检测不足，使用默认间距'); return; }
+                if (beatTimes.length < 2) { console.warn('节拍检测不足，使用默认间距'); try { window.__telemetry.track('audio_init', { status: 'degraded', beat_count: beatTimes.length }); } catch (_) {} return; }
                 // 切出每个重音前后约0.55s的音频片段（总长约1.1s，略小于弹跳周期）
                 const sliceHalf = 0.55;
                 for (let i = 0; i < beatTimes.length; i++) {
@@ -511,8 +817,10 @@
                 }
                 audioReady = true;
                 console.log('节拍分析完成：' + beatTimes.length + ' 个节拍');
+                try { window.__telemetry.track('audio_init', { status: 'success', beat_count: beatTimes.length }); } catch (_) {}
             } catch (e) {
                 console.warn('音频初始化失败：', e);
+                try { window.__telemetry.track('audio_init', { status: 'failure', error: String(e).slice(0, 200) }); } catch (_) {}
             }
         }
 
@@ -580,12 +888,13 @@
             tip.style.display = 'flex';
             tip.__onDismiss = () => {
                 gameStarted = true;
+                try { window.__telemetry.setLevel(n); window.__telemetry.track('level_start', { level: n, level_name: levels[n].name }); } catch (_) {}
                 initAudio();
                 // 开始播放背景音乐
                 if (bgmEl) {
                     bgmEl.volume = 0.3;
                     bgmEl.currentTime = 0;
-                    bgmEl.play().catch(() => {});
+                    bgmEl.play().catch(function(e) { try { window.__telemetry.track('bgm_autoplay_blocked', { error: e.name }); } catch (_) {} });
                 }
                 restartGame();
             };
@@ -1084,6 +1393,7 @@
             if (blackHoleSpawned || gameWon || gameOver) return;
             if (comboCount < levels[currentLevel].comboToWin) return;
             blackHoleSpawned = true;
+            try { window.__telemetry.track('objective_spawned', { combo_required: levels[currentLevel].comboToWin }); } catch (_) {}
             const z = nextSegZ - currentSegTotal * 2;
             targetDistance = Math.abs(z);
             tarDistEl.textContent = '目标 ' + targetDistance.toFixed(1) + ' m';
@@ -1114,6 +1424,7 @@
         function triggerDeath() {
             if (gameOver) return;
             gameOver = true;
+            try { window.__telemetry.track('death', { death_type: 'color_mismatch', combo: comboCount, distance: plankGroup.position.z }); } catch (_) {}
             deathTime = 0;
             hideCombo();
             boostAccum = 0;
@@ -1158,6 +1469,7 @@
         function nextLevel() {
             unlockNextLevel();
             currentLevel++;
+            try { window.__telemetry.setLevel(currentLevel); window.__telemetry.track('next_level', { level: currentLevel }); } catch (_) {}
             restartGame();
         }
 
@@ -1167,6 +1479,7 @@
             document.getElementById('win-overlay').style.display = 'none';
             document.getElementById('levelselect-overlay').style.display = 'none';
             gameStarted = true;
+            try { window.__telemetry.track('game_restart', { level: currentLevel }); } catch (_) {}
             gameOver = false;
             gameWon = false;
             falling = false;
@@ -1286,11 +1599,13 @@
             explosionVelocities.length = 0;
             document.getElementById('gameover-overlay').style.display = 'none';
             // 恢复背景音乐
-            if (bgmEl) { bgmEl.play().catch(() => {}); }
+            if (bgmEl) { bgmEl.play().catch(function(){}); }
+            try { window.__telemetry.track('resume_used', { distance: plankGroup.position.z, combo: comboCount }); } catch (_) {}
         }
 
         let adTimer = null;
         function showAd() {
+            try { window.__telemetry.track('ad_watch_start', { level: currentLevel, distance: plankGroup.position.z }); } catch (_) {}
             const adOverlay = document.getElementById('ad-overlay');
             const adVideo = document.getElementById('ad-video');
             const adCountdownEl = document.getElementById('ad-countdown');
@@ -1313,6 +1628,7 @@
                     adTimer = null;
                     adVideo.pause();
                     adOverlay.style.display = 'none';
+                    try { window.__telemetry.track('ad_completed', { level: currentLevel, distance: plankGroup.position.z }); } catch (_) {}
                     resumeGame();
                 }
             }, 1000);
@@ -1330,6 +1646,7 @@
             if (currentLevel < totalLevels - 1) {
                 nextLevel();
             } else {
+                try { window.__telemetry.track('all_levels_complete', { total_levels: totalLevels }); } catch (_) {}
                 currentLevel = 0;
                 restartGame();
             }
@@ -1661,6 +1978,7 @@
                 const now = performance.now();
                 const dt = Math.min(0.1, (now - lastFrameTime) / 1000);
                 lastFrameTime = now;
+                try { window.__telemetry.recordFrame(dt * 1000, plankGroup.position.z); } catch (_) {}
                 if (boostAccum > 0) {
                     boostAccum = Math.max(0, boostAccum - boostDecayRate * dt);
                 }
@@ -1805,6 +2123,7 @@
                 // 1秒后弹出GameOver
                 if (progress >= 1) {
                     gameOver = true;
+                    try { window.__telemetry.track('death', { death_type: 'fall_off_edge', distance: plankGroup.position.z }); } catch (_) {}
                     hideCombo();
                     document.getElementById('gameover-overlay').style.display = 'flex';
                 }
@@ -1873,6 +2192,7 @@
                 // 胜利判定（球进入视界）
                 if (distToBH < 0.25 && !gameOver && !falling && !gameWon) {
                     gameWon = true;
+                    try { window.__telemetry.setSessionEndReason('win'); window.__telemetry.track('level_complete', { level: currentLevel, level_name: levels[currentLevel].name, distance: plankGroup.position.z, combo: comboCount }); window.__telemetry.flush(); } catch (_) {}
                     unlockNextLevel();
                     hideCombo();
                     sphere.visible = false;
