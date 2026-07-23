@@ -79,6 +79,8 @@ Rules:
 - Commit each functional change immediately — don't accumulate multiple uncommitted edits.
 - After committing, attempt to push. If the network fails (common when reaching GitHub from mainland China — `port 443` timeout / connection reset), tell the user and preserve the local state; never abandon the commit or `--force` your way around it.
 
+Auto-push: a `post-commit` hook (`scripts/auto-push.sh`) automatically pushes after every commit, retrying every 10s until success (never `--force`, only `origin main`). It uses a `.git/auto-push.lock` mkdir lock so concurrent triggers don't duplicate pushes. Note that `.git/hooks/` is not versioned — reinstall the hook after a fresh clone. To disable, delete `.git/hooks/post-commit`.
+
 Recovery if a pushed commit was accidentally amended (local shows `ahead 1, behind 1`):
 
 ```bash
