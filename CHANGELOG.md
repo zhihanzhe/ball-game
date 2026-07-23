@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-07-23
+
+### 修复
+
+- 移动端点击右下角静音按钮时，触摸事件不再被当作游戏控制输入，修复误触导致小球瞬间飞出界外死亡的问题
+
 ## [1.1.0] - 2026-07-23
 
 ### 新增
@@ -58,6 +64,7 @@
 - 跨设备兼容：采用 IIFE 格式 + JS 内联，手机/电脑均可直接打开即玩
 - 手机端渲染问题：关卡卡片改为静态 HTML，脚本移至 body 末尾
 
-[Unreleased]: https://github.com/zhihanzhe/ball-game/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/zhihanzhe/ball-game/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/zhihanzhe/ball-game/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/zhihanzhe/ball-game/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/zhihanzhe/ball-game/releases/tag/v1.0.0

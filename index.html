@@ -2022,11 +2022,17 @@
             updatePointer(e.clientX);
         });
 
+        // 触摸来自按钮等 UI 控件（如静音键）时不更新球位，避免误触飞出界
+        function isUiTouch(e) {
+            return !!(e.target && e.target.closest && e.target.closest('button'));
+        }
+
         window.addEventListener('touchstart', (e) => {
-            if (e.touches.length > 0) updatePointer(e.touches[0].clientX);
+            if (e.touches.length > 0 && !isUiTouch(e)) updatePointer(e.touches[0].clientX);
         }, { passive: true });
 
         window.addEventListener('touchmove', (e) => {
+            if (isUiTouch(e)) return;  // 不拦截 UI 触摸，保证 click 正常触发
             e.preventDefault();
             if (e.touches.length > 0) updatePointer(e.touches[0].clientX);
         }, { passive: false });
