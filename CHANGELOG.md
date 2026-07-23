@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-07-23
+
+### 修复
+
+- 进一步修复移动端点按静音按钮仍飞出界的问题：点按按钮后浏览器派发的合成 `mousemove` 事件坐标落在按钮上，会把球拉向屏幕边缘；现按时间窗屏蔽触摸后 700ms 内的合成鼠标事件（并优先使用 `sourceCapabilities.firesTouchEvents` 判定）
+
 ## [1.1.1] - 2026-07-23
 
 ### 修复
@@ -64,7 +70,8 @@
 - 跨设备兼容：采用 IIFE 格式 + JS 内联，手机/电脑均可直接打开即玩
 - 手机端渲染问题：关卡卡片改为静态 HTML，脚本移至 body 末尾
 
-[Unreleased]: https://github.com/zhihanzhe/ball-game/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/zhihanzhe/ball-game/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/zhihanzhe/ball-game/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/zhihanzhe/ball-game/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/zhihanzhe/ball-game/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/zhihanzhe/ball-game/releases/tag/v1.0.0
